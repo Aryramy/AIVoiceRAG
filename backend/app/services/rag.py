@@ -1,0 +1,351 @@
+import time
+import uuid
+from typing import Dict, Any, List, Optional, Tuple, AsyncIterator
+from sqlalchemy.orm import Session
+
+from backend.app.database.models import (
+    Conversation, Message, KnowledgeBase, Document, DocumentChunk, MessageCitation, AISettings, UsageLog
+)
+from backend.app.services.intent import get_intent_classifier, UserIntent
+from backend.app.services.retrieval import get_retrieval_service, RetrievedChunk
+from backend.app.services.router import get_router
+from backend.app.services.pricing import get_pricing_calculator
+from backend.app.integrations import get_provider_adapter
+from backend.app.schemas.settings import AISettingsResponse
+
+class RAGService:
+    def __init__(self):
+        self.intent_classifier = get_intent_classifier()
+        self.retrieval_svc = get_retrieval_service()
+        self.router = get_router()
+        self.pricing_calc = get_pricing_calculator()
+
+    def get_or_create_settings(self, db: Session, user_id: Optional[str] = None) -> AISettings:
+        settings_record = db.query(AISettings).first()
+        if not settings_record:
+            settings_record = AISettings()
+            db.add(settings_record)
+            db.commit()
+            db.refresh(settings_record)
+        return settings_record
+
+    async def answer_query(
+        self,
+        db: Session,
+        conversation_id: str,
+        user_query: str,
+        kb_id: Optional[str] = None,
+        language: Optional[str] = None,
+        stream: bool = False
+    ) -> Dict[str, Any]:
+        start_time = time.perf_counter()
+        settings_model = self.get_or_create_settings(db)
+        settings_dto = AISettingsResponse.model_validate(settings_model)
+
+        is_ar = self.intent_classifier.is_arabic(user_query) if not language else (language.lower().startswith("ar"))
+        intent, canned_response = self.intent_classifier.classify(user_query)
+
+        # 1. Handle pure conversational intent
+        if intent == UserIntent.CONVERSATIONAL and not kb_id:
+            latency = round((time.perf_counter() - start_time) * 1000, 2)
+            assistant_text = canned_response or ("Hello! How can I assist you?" if not is_ar else "مرحباً! كيف أستطيع مساعدتك اليوم؟")
+            
+            # Save User Message
+            user_msg = Message(
+                conversation_id=conversation_id,
+                role="user",
+                content=user_query,
+                language="ar" if is_ar else "en"
+            )
+            db.add(user_msg)
+            db.commit()
+
+            # Save Assistant Message
+            assistant_msg = Message(
+                conversation_id=conversation_id,
+                role="assistant",
+                content=assistant_text,
+                language="ar" if is_ar else "en",
+                provider="internal",
+                model="conversational-intent-gate",
+                latency_ms=latency,
+                cost_usd=0.0
+            )
+            db.add(assistant_msg)
+
+            # Log Usage
+            usage = UsageLog(
+                conversation_id=conversation_id,
+                provider="internal",
+                model="intent-gate",
+                capability="llm",
+                latency_ms=latency,
+                cost_usd=0.0,
+                status="success"
+            )
+            db.add(usage)
+            db.commit()
+            db.refresh(assistant_msg)
+
+            return {
+                "message_id": assistant_msg.id,
+                "role": "assistant",
+                "content": assistant_text,
+                "citations": [],
+                "provider": "internal",
+                "model": "intent-gate",
+                "latency_ms": latency,
+                "cost_usd": 0.0,
+                "is_conversational": True
+            }
+
+        # 2. Knowledge Retrieval (if kb_id specified or available)
+        retrieved_chunks: List[RetrievedChunk] = []
+        if kb_id:
+            # Query chunks from DB
+            db_chunks = (
+                db.query(DocumentChunk, Document.title)
+                .join(Document, DocumentChunk.document_id == Document.id)
+                .filter(Document.knowledge_base_id == kb_id)
+                .all()
+            )
+            chunk_dicts = [
+                {
+                    "id": c.DocumentChunk.id,
+                    "doc_id": c.DocumentChunk.document_id,
+                    "doc_title": c.title,
+                    "content": c.DocumentChunk.content,
+                    "page_number": c.DocumentChunk.page_number,
+                    "chunk_index": c.DocumentChunk.chunk_index
+                }
+                for c in db_chunks
+            ]
+
+            retrieved_chunks = self.retrieval_svc.hybrid_search(
+                kb_id=kb_id,
+                query=user_query,
+                all_chunks=chunk_dicts,
+                top_k=settings_dto.top_k,
+                hybrid_alpha=settings_dto.hybrid_alpha,
+                similarity_threshold=settings_dto.similarity_threshold
+            )
+
+            # Abstention check
+            if not retrieved_chunks and settings_dto.abstention_enabled and len(chunk_dicts) > 0:
+                abstain_text = (
+                    "لم أتمكن من العثور على معلومات كافية في قاعدة المعرفة المحددة للإجابة على استفسارك بدقة."
+                    if is_ar
+                    else "I could not find relevant information in the provided knowledge base to answer this question."
+                )
+                latency = round((time.perf_counter() - start_time) * 1000, 2)
+
+                user_msg = Message(conversation_id=conversation_id, role="user", content=user_query, language="ar" if is_ar else "en")
+                db.add(user_msg)
+                db.commit()
+
+                assistant_msg = Message(
+                    conversation_id=conversation_id,
+                    role="assistant",
+                    content=abstain_text,
+                    language="ar" if is_ar else "en",
+                    provider="retrieval",
+                    model="abstention-gate",
+                    latency_ms=latency,
+                    cost_usd=0.0
+                )
+                db.add(assistant_msg)
+                db.commit()
+                db.refresh(assistant_msg)
+
+                return {
+                    "message_id": assistant_msg.id,
+                    "role": "assistant",
+                    "content": abstain_text,
+                    "citations": [],
+                    "provider": "retrieval",
+                    "model": "abstention-gate",
+                    "latency_ms": latency,
+                    "cost_usd": 0.0,
+                    "abstained": True
+                }
+
+        # 3. Model Selection via Smart Router
+        provider_name, model_name = self.router.select_model(
+            settings=settings_dto,
+            intent=intent,
+            query_token_estimate=len(user_query.split()),
+            has_docs=bool(retrieved_chunks)
+        )
+        adapter = get_provider_adapter(provider_name)
+        if not adapter:
+            provider_name = "openai"
+            model_name = "gpt-4o-mini"
+            adapter = get_provider_adapter("openai")
+
+        # 4. Construct Grounded Prompt
+        system_prompt = settings_dto.system_prompt_ar if is_ar else settings_dto.system_prompt_en
+        
+        context_blocks = []
+        for idx, rc in enumerate(retrieved_chunks, start=1):
+            page_info = f" (Page {rc.page_number})" if rc.page_number else ""
+            context_blocks.append(f"[{idx}] Source: {rc.document_title}{page_info}\n{rc.content}")
+
+        context_str = "\n\n".join(context_blocks)
+        
+        if retrieved_chunks:
+            grounding_instruction = (
+                f"\n\n--- KNOWLEDGE SOURCES ---\n{context_str}\n\n"
+                "INSTRUCTIONS:\n"
+                "1. Answer using ONLY the knowledge sources above.\n"
+                "2. When stating facts, cite the source number using bracket notation like [1] or [2].\n"
+                "3. If the knowledge sources do not contain the answer, say so clearly."
+            )
+            full_system_prompt = system_prompt + grounding_instruction
+        else:
+            full_system_prompt = system_prompt
+
+        messages = [
+            {"role": "system", "content": full_system_prompt},
+            {"role": "user", "content": user_query}
+        ]
+
+        # 5. Call Provider Adapter
+        error_msg = None
+        assistant_content = ""
+        prompt_tokens = 0
+        completion_tokens = 0
+
+        try:
+            res = await adapter.chat_complete(
+                messages=messages,
+                model=model_name,
+                temperature=settings_dto.temperature,
+                max_tokens=settings_dto.max_tokens,
+                stream=False
+            )
+            self.router.report_success(provider_name)
+
+            if "choices" in res and len(res["choices"]) > 0:
+                assistant_content = res["choices"][0]["message"]["content"]
+            elif "candidates" in res and len(res["candidates"]) > 0:
+                # Gemini candidate response
+                candidate = res["candidates"][0]
+                assistant_content = candidate.get("content", {}).get("parts", [{}])[0].get("text", "")
+            else:
+                assistant_content = str(res)
+
+            usage_info = res.get("usage", {})
+            prompt_tokens = usage_info.get("prompt_tokens", len(full_system_prompt.split()) + len(user_query.split()))
+            completion_tokens = usage_info.get("completion_tokens", len(assistant_content.split()))
+
+        except Exception as e:
+            self.router.report_failure(provider_name)
+            error_msg = str(e)
+            
+            # Attempt Fallback if enabled
+            if settings_dto.fallback_enabled and settings_dto.fallback_provider and settings_dto.fallback_model:
+                try:
+                    fb_adapter = get_provider_adapter(settings_dto.fallback_provider)
+                    if fb_adapter:
+                        provider_name = settings_dto.fallback_provider
+                        model_name = settings_dto.fallback_model
+                        res = await fb_adapter.chat_complete(
+                            messages=messages,
+                            model=model_name,
+                            temperature=settings_dto.temperature,
+                            max_tokens=settings_dto.max_tokens,
+                            stream=False
+                        )
+                        assistant_content = res["choices"][0]["message"]["content"]
+                        error_msg = None
+                except Exception as fb_err:
+                    error_msg = f"Primary and Fallback failed: {str(fb_err)}"
+            
+            if error_msg:
+                assistant_content = f"Error generating response from {provider_name}: {error_msg}"
+
+        latency = round((time.perf_counter() - start_time) * 1000, 2)
+        cost_usd = self.pricing_calc.calculate_llm_cost(
+            model=model_name,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens
+        )
+
+        # 6. Save User & Assistant Messages
+        user_msg = Message(
+            conversation_id=conversation_id,
+            role="user",
+            content=user_query,
+            language="ar" if is_ar else "en"
+        )
+        db.add(user_msg)
+        db.commit()
+
+        assistant_msg = Message(
+            conversation_id=conversation_id,
+            role="assistant",
+            content=assistant_content,
+            language="ar" if is_ar else "en",
+            provider=provider_name,
+            model=model_name,
+            latency_ms=latency,
+            cost_usd=cost_usd,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=prompt_tokens + completion_tokens
+        )
+        db.add(assistant_msg)
+        db.commit()
+        db.refresh(assistant_msg)
+
+        # 7. Save Message Citations
+        citations_data = []
+        for rc in retrieved_chunks:
+            cit = MessageCitation(
+                message_id=assistant_msg.id,
+                chunk_id=rc.chunk_id,
+                document_id=rc.document_id,
+                document_title=rc.document_title,
+                page_number=rc.page_number,
+                content_snippet=rc.content[:300],
+                similarity_score=rc.score
+            )
+            db.add(cit)
+            citations_data.append(rc.to_dict())
+        db.commit()
+
+        # 8. Record Usage Telemetry
+        usage = UsageLog(
+            conversation_id=conversation_id,
+            provider=provider_name,
+            model=model_name,
+            capability="llm",
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=prompt_tokens + completion_tokens,
+            cost_usd=cost_usd,
+            latency_ms=latency,
+            status="error" if error_msg else "success",
+            error_message=error_msg
+        )
+        db.add(usage)
+        db.commit()
+
+        return {
+            "message_id": assistant_msg.id,
+            "role": "assistant",
+            "content": assistant_content,
+            "citations": citations_data,
+            "provider": provider_name,
+            "model": model_name,
+            "latency_ms": latency,
+            "cost_usd": cost_usd,
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "total_tokens": prompt_tokens + completion_tokens
+        }
+
+_RAG_SERVICE = RAGService()
+
+def get_rag_service() -> RAGService:
+    return _RAG_SERVICE

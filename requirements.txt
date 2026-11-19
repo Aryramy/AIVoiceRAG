@@ -1,0 +1,38 @@
+# Backend Core
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+pydantic>=2.10.0
+pydantic-settings>=2.6.0
+python-dotenv>=1.0.1
+python-multipart>=0.0.18
+httpx>=0.28.0
+aiofiles>=24.1.0
+
+# Database & Migrations
+sqlalchemy>=2.0.35
+alembic>=1.13.0
+
+# Vector & Retrieval
+qdrant-client>=1.12.0
+rank-bm25>=0.2.2
+fastembed>=0.7.0
+
+# Document Ingestion
+pypdf>=5.0.0
+python-docx>=1.1.0
+openpyxl>=3.1.0
+
+# AI Providers & Routing
+openai>=1.55.0
+google-genai>=0.1.1
+litellm>=1.50.0
+
+# Voice & Realtime
+livekit==1.0.27
+livekit-api==1.0.7
+livekit-agents==1.4.2
+edge-tts>=7.0.0
+
+# Testing & Quality
+pytest>=8.0.0
+pytest-asyncio>=0.24.0
