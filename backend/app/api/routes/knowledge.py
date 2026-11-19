@@ -276,3 +276,4 @@ def query_knowledge_base(
         )
         for r in results
     ]
+

@@ -31,3 +31,4 @@ def update_ai_settings(data: AISettingsUpdate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(settings_record)
     return settings_record
+

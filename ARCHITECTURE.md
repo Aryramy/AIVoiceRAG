@@ -9,3 +9,4 @@ For comprehensive documentation, see [docs/SYSTEM_ARCHITECTURE.md](file:///c:/Us
 - **Frontend**: Next.js 15 + React + Tailwind + Lucide Icons in `frontend/`.
 - **Real-Time Voice**: LiveKit WebRTC + Silero VAD + Edge-TTS / Provider TTS.
 - **Provider Adapters**: OpenAI, Gemini, OpenRouter, CheaperInference in `backend/app/integrations/`.
+

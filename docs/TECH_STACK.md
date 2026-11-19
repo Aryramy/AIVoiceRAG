@@ -40,3 +40,4 @@
   - Native RTL direction switching (`dir="rtl"`, `dir="ltr"`)
   - Direction-aware CSS classes (`rtl:...`, `start`, `end`)
   - Arabic typography (Cairo / IBM Plex Sans Arabic / Noto Sans Arabic)
+

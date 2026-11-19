@@ -2,36 +2,99 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { useApp } from "@/context/AppContext";
-import { sendMessage, synthesizeSpeech } from "@/lib/api";
-import { Mic, MicOff, X, Radio, Volume2, Square, Sparkles } from "lucide-react";
+import { sendMessage, synthesizeSpeech, transcribeAudio, createConversation } from "@/lib/api";
+import { Mic, MicOff, X, Radio, Volume2, Square, Sparkles, AlertCircle, RefreshCw } from "lucide-react";
 
 type VoiceState = "idle" | "listening" | "processing" | "speaking" | "interrupted";
 
 export function VoiceWaveModal() {
-  const { voiceModalOpen, setVoiceModalOpen, language, activeConversationId, activeKbId, refreshConversations } = useApp();
+  const {
+    voiceModalOpen,
+    setVoiceModalOpen,
+    language,
+    activeConversationId,
+    setActiveConversationId,
+    activeKbId,
+    refreshConversations
+  } = useApp();
+
   const [state, setState] = useState<VoiceState>("idle");
   const [isMuted, setIsMuted] = useState(false);
   const [transcript, setTranscript] = useState("");
   const [assistantText, setAssistantText] = useState("");
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [useDirectMode, setUseDirectMode] = useState(false);
+  const [isDirectRecording, setIsDirectRecording] = useState(false);
+
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const recognitionRef = useRef<any>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
 
-  // Initialize Speech Recognition (Web Speech API)
+  // Synchronized refs to avoid stale closures in event callbacks
+  const latestTranscriptRef = useRef("");
+  const stateRef = useRef<VoiceState>("idle");
+  const isMutedRef = useRef(false);
+
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
+
+  useEffect(() => {
+    isMutedRef.current = isMuted;
+  }, [isMuted]);
+
+  // Check browser speech recognition support
+  const hasWebSpeech =
+    typeof window !== "undefined" &&
+    Boolean((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition);
+
+  // Initialize Speech Recognition when modal opens (if in Web Speech mode)
   useEffect(() => {
     if (!voiceModalOpen) {
+      // Cleanup when closed
       if (audioRef.current) {
         audioRef.current.pause();
         audioRef.current = null;
       }
       if (recognitionRef.current) {
-        recognitionRef.current.stop();
+        try {
+          recognitionRef.current.stop();
+        } catch (e) {}
+        recognitionRef.current = null;
+      }
+      if (mediaStreamRef.current) {
+        mediaStreamRef.current.getTracks().forEach((track) => track.stop());
+        mediaStreamRef.current = null;
       }
       setState("idle");
+      setTranscript("");
+      setAssistantText("");
+      setErrorMessage(null);
+      setIsDirectRecording(false);
       return;
     }
 
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    // If Web Speech API is not supported, automatically activate Direct Recording mode
+    if (!hasWebSpeech) {
+      setUseDirectMode(true);
+      return;
+    }
+
+    if (useDirectMode) {
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch (e) {}
+      }
+      return;
+    }
+
+    const SpeechRecognition =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+
     if (SpeechRecognition) {
       const recognition = new SpeechRecognition();
       recognition.continuous = false;
@@ -40,6 +103,7 @@ export function VoiceWaveModal() {
 
       recognition.onstart = () => {
         setState("listening");
+        setErrorMessage(null);
       };
 
       recognition.onresult = (event: any) => {
@@ -47,18 +111,36 @@ export function VoiceWaveModal() {
         for (let i = 0; i < event.results.length; i++) {
           currentText += event.results[i][0].transcript;
         }
+        latestTranscriptRef.current = currentText;
         setTranscript(currentText);
       };
 
       recognition.onend = async () => {
-        if (transcript.trim() && state === "listening") {
-          await processUserSpeech(transcript);
-        } else if (state === "listening") {
+        const speechText = latestTranscriptRef.current.trim();
+        if (speechText && (stateRef.current === "listening" || stateRef.current === "idle")) {
+          latestTranscriptRef.current = "";
+          await processUserSpeech(speechText);
+        } else if (stateRef.current === "listening") {
           setState("idle");
         }
       };
 
-      recognition.onerror = () => {
+      recognition.onerror = (event: any) => {
+        console.error("Speech recognition error:", event.error);
+        if (event.error === "not-allowed" || event.error === "service-not-allowed") {
+          setErrorMessage(
+            language === "ar"
+              ? "تم رفض إذن الوصول إلى الميكروفون. يرجى تفعيل الصلاحية في المتصفح."
+              : "Microphone access was denied. Please allow microphone access in browser settings."
+          );
+        } else if (event.error === "network") {
+          setErrorMessage(
+            language === "ar"
+              ? "تعذر الاتصال بخدمة التعرف على الصوت. تم تفعيل خيار التسجيل المباشر."
+              : "Network error with speech recognition. Direct recording mode is available below."
+          );
+          setUseDirectMode(true);
+        }
         setState("idle");
       };
 
@@ -66,58 +148,190 @@ export function VoiceWaveModal() {
       try {
         recognition.start();
       } catch (e) {
-        console.error(e);
+        console.error("Failed to start speech recognition:", e);
       }
-    } else {
-      // Fallback
-      setState("listening");
     }
 
     return () => {
       if (recognitionRef.current) {
-        recognitionRef.current.stop();
+        try {
+          recognitionRef.current.stop();
+        } catch (e) {}
       }
     };
-  }, [voiceModalOpen, language]);
+  }, [voiceModalOpen, language, useDirectMode, hasWebSpeech]);
 
-  // Handle Assistant Generation & Speech Playback
+  // Direct Audio Recording Fallback using MediaRecorder & /api/v1/voice/transcribe
+  const startDirectRecording = async () => {
+    try {
+      setErrorMessage(null);
+      if (!navigator.mediaDevices?.getUserMedia) {
+        setErrorMessage(
+          language === "ar"
+            ? "المتصفح لا يدعم التسجيل الصوتي."
+            : "MediaDevices recording is not supported in this browser."
+        );
+        return;
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaStreamRef.current = stream;
+      audioChunksRef.current = [];
+
+      const mimeType =
+        typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+          ? "audio/webm;codecs=opus"
+          : typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported("audio/webm")
+          ? "audio/webm"
+          : "";
+
+      const options = mimeType ? { mimeType } : undefined;
+      const recorder = new MediaRecorder(stream, options);
+      mediaRecorderRef.current = recorder;
+
+      recorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) {
+          audioChunksRef.current.push(e.data);
+        }
+      };
+
+      recorder.onstop = async () => {
+        if (mediaStreamRef.current) {
+          mediaStreamRef.current.getTracks().forEach((track) => track.stop());
+          mediaStreamRef.current = null;
+        }
+        setIsDirectRecording(false);
+
+        const audioBlob = new Blob(audioChunksRef.current, {
+          type: recorder.mimeType || "audio/webm"
+        });
+
+        if (audioBlob.size > 500) {
+          setState("processing");
+          try {
+            const res = await transcribeAudio(audioBlob, language);
+            if (res.text && res.text.trim()) {
+              setTranscript(res.text);
+              await processUserSpeech(res.text);
+            } else {
+              setErrorMessage(
+                language === "ar"
+                  ? "لم يتم التعرف على أي صوت، يرجى المحاولة مرة أخرى."
+                  : "No speech recognized, please try speaking again."
+              );
+              setState("idle");
+            }
+          } catch (tErr: any) {
+            console.error("Transcribe failed:", tErr);
+            setErrorMessage(
+              language === "ar"
+                ? "فشل تحويل الصوت إلى نص عبر الخادم."
+                : "Speech transcription service failed."
+            );
+            setState("idle");
+          }
+        } else {
+          setState("idle");
+        }
+      };
+
+      recorder.start(250);
+      setIsDirectRecording(true);
+      setState("listening");
+    } catch (err: any) {
+      console.error("getUserMedia error:", err);
+      setErrorMessage(
+        language === "ar"
+          ? "تعذر الوصول للميكروفون. يرجى التأكد من توصيله ومنح الإذن في المتصفح."
+          : "Could not access microphone. Please ensure permissions are granted in browser."
+      );
+      setState("idle");
+    }
+  };
+
+  const stopDirectRecording = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+      mediaRecorderRef.current.stop();
+    }
+  };
+
+  // Process User Speech: Auto-create conversation if none exists, send message, synthesize speech
   const processUserSpeech = async (userText: string) => {
     if (!userText.trim()) return;
     setState("processing");
+
     try {
-      if (!activeConversationId) return;
-      const res = await sendMessage(activeConversationId, userText, activeKbId || undefined, language);
+      let targetConvId = activeConversationId;
+      if (!targetConvId) {
+        try {
+          const titleSnippet = userText.trim().slice(0, 32);
+          const title = titleSnippet || (language === "ar" ? "محادثة صوتية" : "Voice Conversation");
+          const newConv = await createConversation(title, language);
+          targetConvId = newConv.id;
+          setActiveConversationId(newConv.id);
+          await refreshConversations();
+        } catch (convErr: any) {
+          console.error("Failed to auto-create conversation in voice mode:", convErr);
+          setErrorMessage(
+            language === "ar" ? "فشل إنشاء محادثة جديدة" : "Failed to create conversation"
+          );
+          setState("idle");
+          return;
+        }
+      }
+
+      const res = await sendMessage(targetConvId, userText, activeKbId || undefined, language);
       const reply = res.content || "";
       setAssistantText(reply);
       setState("speaking");
       await refreshConversations();
 
-      // Synthesize neural speech audio
-      const audioBlob = await synthesizeSpeech(reply, language === "ar" ? "ar" : "en");
-      const audioUrl = URL.createObjectURL(audioBlob);
-      const audio = new Audio(audioUrl);
-      audioRef.current = audio;
+      // Neural Speech Synthesis
+      try {
+        const audioBlob = await synthesizeSpeech(reply, language === "ar" ? "ar" : "en");
+        if (audioBlob && audioBlob.size > 0) {
+          const audioUrl = URL.createObjectURL(audioBlob);
+          const audio = new Audio(audioUrl);
+          audioRef.current = audio;
 
-      audio.onended = () => {
-        setState("listening");
-        setTranscript("");
-        URL.revokeObjectURL(audioUrl);
-        // Resume listening automatically
-        if (recognitionRef.current) {
-          try {
-            recognitionRef.current.start();
-          } catch (e) {}
+          audio.onended = () => {
+            URL.revokeObjectURL(audioUrl);
+            audioRef.current = null;
+            setState("idle");
+            setTranscript("");
+            // Restart speech recognition automatically if in Web Speech mode and unmuted
+            if (!useDirectMode && recognitionRef.current && !isMutedRef.current) {
+              try {
+                recognitionRef.current.start();
+              } catch (e) {}
+            }
+          };
+
+          audio.onerror = (e) => {
+            console.error("Audio playback error:", e);
+            URL.revokeObjectURL(audioUrl);
+            audioRef.current = null;
+            setState("idle");
+          };
+
+          await audio.play();
+        } else {
+          setState("idle");
         }
-      };
-
-      await audio.play();
-    } catch (err) {
+      } catch (synthErr) {
+        console.error("Speech synthesis failed, text reply preserved:", synthErr);
+        setState("idle");
+      }
+    } catch (err: any) {
       console.error(err);
+      setErrorMessage(
+        err.message || (language === "ar" ? "فشل توليد الإجابة" : "Failed to generate response")
+      );
       setState("idle");
     }
   };
 
-  // Canvas Waveform Animation
+  // Waveform Visualizer
   useEffect(() => {
     if (!voiceModalOpen) return;
     const canvas = canvasRef.current;
@@ -134,26 +348,24 @@ export function VoiceWaveModal() {
       const height = canvas.height;
       const centerY = height / 2;
 
-      // Color scheme based on state
-      let strokeColor = "rgba(99, 102, 241, 0.8)"; // Indigo default
+      let strokeColor = "rgba(99, 102, 241, 0.8)";
       let amplitude = 12;
       let freq = 0.02;
 
       if (state === "listening") {
-        strokeColor = "rgba(59, 130, 246, 0.9)"; // Blue
-        amplitude = 25;
+        strokeColor = "rgba(59, 130, 246, 0.9)";
+        amplitude = 26;
         freq = 0.03;
       } else if (state === "processing") {
-        strokeColor = "rgba(245, 158, 11, 0.9)"; // Orange
-        amplitude = 8;
+        strokeColor = "rgba(245, 158, 11, 0.9)";
+        amplitude = 9;
         freq = 0.05;
       } else if (state === "speaking") {
-        strokeColor = "rgba(34, 197, 94, 0.9)"; // Emerald
-        amplitude = 35;
+        strokeColor = "rgba(34, 197, 94, 0.9)";
+        amplitude = 36;
         freq = 0.04;
       }
 
-      // Draw multi-layered sine waves
       for (let wave = 0; wave < 3; wave++) {
         ctx.beginPath();
         ctx.lineWidth = 2.5 - wave * 0.5;
@@ -161,7 +373,11 @@ export function VoiceWaveModal() {
         ctx.globalAlpha = 0.9 - wave * 0.25;
 
         for (let x = 0; x < width; x++) {
-          const y = centerY + Math.sin(x * freq + phase + wave * 1.5) * amplitude * Math.sin(Math.PI * (x / width));
+          const y =
+            centerY +
+            Math.sin(x * freq + phase + wave * 1.5) *
+              amplitude *
+              Math.sin(Math.PI * (x / width));
           if (x === 0) ctx.moveTo(x, y);
           else ctx.lineTo(x, y);
         }
@@ -176,16 +392,51 @@ export function VoiceWaveModal() {
     return () => cancelAnimationFrame(animationId);
   }, [voiceModalOpen, state]);
 
+  // Interrupt Speech
   const handleInterrupt = () => {
     if (audioRef.current) {
       audioRef.current.pause();
+      audioRef.current.currentTime = 0;
       audioRef.current = null;
     }
-    setState("listening");
-    if (recognitionRef.current) {
-      try {
-        recognitionRef.current.start();
-      } catch (e) {}
+    if (isDirectRecording) {
+      stopDirectRecording();
+    }
+    setState("idle");
+  };
+
+  // Toggle or retry microphone trigger
+  const handleMicToggle = () => {
+    if (state === "speaking") {
+      handleInterrupt();
+      return;
+    }
+
+    if (useDirectMode) {
+      if (isDirectRecording) {
+        stopDirectRecording();
+      } else {
+        startDirectRecording();
+      }
+      return;
+    }
+
+    // Web Speech API toggle
+    if (state === "listening") {
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.stop();
+        } catch (e) {}
+      }
+      setState("idle");
+    } else {
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.start();
+        } catch (e) {
+          console.error(e);
+        }
+      }
     }
   };
 
@@ -197,18 +448,56 @@ export function VoiceWaveModal() {
         {/* Close Button */}
         <button
           onClick={() => setVoiceModalOpen(false)}
-          className="absolute top-4 end-4 p-2 text-slate-400 hover:text-white rounded-full hover:bg-slate-800 transition"
+          className="absolute top-4 end-4 p-2 text-slate-400 hover:text-white rounded-full hover:bg-slate-800 transition cursor-pointer"
         >
           <X size={20} />
         </button>
 
         {/* Header Indicator */}
-        <div className="flex items-center gap-2 mb-6 text-xs text-slate-400">
+        <div className="flex items-center gap-2 mb-4 text-xs text-slate-400">
           <Radio size={14} className="text-indigo-400 animate-pulse" />
           <span className="font-medium tracking-wide uppercase">
             {language === "ar" ? "جلسة صوتية فورية متصلة" : "Live Real-Time Voice Assistant"}
           </span>
         </div>
+
+        {/* Mode Switch Pill */}
+        <div className="flex items-center gap-2 mb-2">
+          <button
+            onClick={() => {
+              setErrorMessage(null);
+              setUseDirectMode(!useDirectMode);
+            }}
+            className="flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-medium border transition cursor-pointer bg-slate-800 border-slate-700 text-slate-300 hover:text-white hover:border-slate-600"
+          >
+            <span>
+              {useDirectMode
+                ? language === "ar"
+                  ? "الوضع: تسجيل ميكروفون مباشر (Whisper)"
+                  : "Mode: Direct Mic Recording (Whisper)"
+                : language === "ar"
+                ? "الوضع: تعرف صوتي مباشر (Web Speech)"
+                : "Mode: Web Speech Real-Time"}
+            </span>
+            <RefreshCw size={11} className="text-indigo-400" />
+          </button>
+        </div>
+
+        {/* Error / Permission Alert Banner */}
+        {errorMessage && (
+          <div className="w-full mb-3 px-3.5 py-2.5 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs flex items-center justify-between gap-2 text-start animate-in fade-in">
+            <div className="flex items-center gap-2">
+              <AlertCircle size={15} className="shrink-0 text-red-400" />
+              <span>{errorMessage}</span>
+            </div>
+            <button
+              onClick={() => setErrorMessage(null)}
+              className="p-1 hover:text-white rounded-md transition cursor-pointer"
+            >
+              <X size={13} />
+            </button>
+          </div>
+        )}
 
         {/* Waveform Canvas */}
         <div className="relative w-full h-44 flex items-center justify-center my-2">
@@ -228,7 +517,7 @@ export function VoiceWaveModal() {
         </div>
 
         {/* Status Caption */}
-        <div className="mt-4 mb-2">
+        <div className="mt-2 mb-2">
           <span
             className={`text-sm font-semibold tracking-wide ${
               state === "listening"
@@ -240,10 +529,26 @@ export function VoiceWaveModal() {
                 : "text-slate-400"
             }`}
           >
-            {state === "listening" && (language === "ar" ? "أستمع إليك الآن..." : "Listening...")}
-            {state === "processing" && (language === "ar" ? "جاري المعالجة والتفكير..." : "Thinking...")}
-            {state === "speaking" && (language === "ar" ? "يتحدث المساعد..." : "Voice Assistant speaking...")}
-            {state === "idle" && (language === "ar" ? "اضغط على الميكروفون للتحدث" : "Tap microphone to speak")}
+            {state === "listening" &&
+              (isDirectRecording
+                ? language === "ar"
+                  ? "جاري التسجيل الصوتي... اضغط عند الانتهاء"
+                  : "Recording audio... Tap mic when finished"
+                : language === "ar"
+                ? "أستمع إليك الآن..."
+                : "Listening...")}
+            {state === "processing" &&
+              (language === "ar" ? "جاري المعالجة والتفكير..." : "Thinking & generating response...")}
+            {state === "speaking" &&
+              (language === "ar" ? "يتحدث المساعد..." : "Voice Assistant speaking...")}
+            {state === "idle" &&
+              (useDirectMode
+                ? language === "ar"
+                  ? "اضغط على الميكروفون لبدء التسجيل"
+                  : "Tap microphone to record voice"
+                : language === "ar"
+                ? "اضغط على الميكروفون للتحدث"
+                : "Tap microphone to speak")}
           </span>
         </div>
 
@@ -268,39 +573,41 @@ export function VoiceWaveModal() {
           {state === "speaking" && (
             <button
               onClick={handleInterrupt}
-              className="flex items-center gap-1.5 px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-amber-400 rounded-xl text-xs font-medium transition active:scale-95"
+              className="flex items-center gap-1.5 px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-amber-400 rounded-xl text-xs font-medium transition active:scale-95 cursor-pointer"
             >
               <Square size={14} fill="currentColor" />
               <span>{language === "ar" ? "مقاطعة الحديث" : "Interrupt"}</span>
             </button>
           )}
 
-          {/* Mute/Unmute Mic Button */}
+          {/* Main Mic Button */}
           <button
-            onClick={() => {
-              setIsMuted(!isMuted);
-              if (recognitionRef.current) {
-                if (!isMuted) recognitionRef.current.stop();
-                else recognitionRef.current.start();
-              }
-            }}
-            className={`p-3.5 rounded-2xl transition active:scale-95 ${
-              isMuted
-                ? "bg-red-500/20 text-red-400 border border-red-500/30"
+            onClick={handleMicToggle}
+            className={`p-3.5 rounded-2xl transition active:scale-95 cursor-pointer ${
+              state === "listening" || isDirectRecording
+                ? "bg-red-500 hover:bg-red-600 text-white shadow-lg shadow-red-500/30 animate-pulse"
                 : "bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-600/30"
             }`}
-            title={isMuted ? "Unmute" : "Mute"}
+            title={
+              useDirectMode
+                ? isDirectRecording
+                  ? "Stop Recording"
+                  : "Record Voice"
+                : state === "listening"
+                ? "Pause Mic"
+                : "Start Mic"
+            }
           >
-            {isMuted ? <MicOff size={20} /> : <Mic size={20} />}
+            {state === "listening" || isDirectRecording ? <MicOff size={20} /> : <Mic size={20} />}
           </button>
 
           {/* End Call Button */}
           <button
             onClick={() => setVoiceModalOpen(false)}
-            className="flex items-center gap-1.5 px-4 py-2.5 bg-red-600 hover:bg-red-500 text-white rounded-xl text-xs font-medium transition active:scale-95"
+            className="flex items-center gap-1.5 px-4 py-2.5 bg-slate-800 hover:bg-red-600 text-slate-300 hover:text-white rounded-xl text-xs font-medium transition active:scale-95 cursor-pointer"
           >
             <X size={14} />
-            <span>{language === "ar" ? "إنهاء المحادثة" : "End Call"}</span>
+            <span>{language === "ar" ? "إغلاق" : "Close"}</span>
           </button>
         </div>
       </div>

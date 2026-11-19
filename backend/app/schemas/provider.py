@@ -43,3 +43,4 @@ class ProviderTestResult(BaseModel):
     message: str
     models_found: int = 0
     error: Optional[str] = None
+

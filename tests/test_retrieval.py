@@ -46,3 +46,4 @@ def test_hybrid_search():
     )
     assert len(results_ar) > 0
     assert results_ar[0].chunk_id in ["c4", "c1"]
+

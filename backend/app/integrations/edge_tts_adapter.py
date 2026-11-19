@@ -104,3 +104,4 @@ class EdgeTTSAdapter:
             if chunk["type"] == "audio":
                 mp3_buffer.write(chunk["data"])
         return mp3_buffer.getvalue()
+

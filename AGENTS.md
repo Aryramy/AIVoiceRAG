@@ -25,3 +25,4 @@ VoiceRag development is coordinated under an autonomous lead orchestrator managi
 
 ### 2.7 QA Automation & Quality Engineer
 - Pytest backend test suites, Vitest frontend tests, Playwright browser journeys, and multilingual evaluation benchmarks.
+

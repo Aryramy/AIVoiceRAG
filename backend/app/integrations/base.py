@@ -30,3 +30,4 @@ class BaseProviderAdapter(ABC):
         stream: bool = False,
     ) -> Any:
         pass
+

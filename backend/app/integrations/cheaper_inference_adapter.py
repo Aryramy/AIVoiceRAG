@@ -142,3 +142,4 @@ class CheaperInferenceAdapter(BaseProviderAdapter):
                                 except Exception:
                                     continue
                 return stream_generator()
+

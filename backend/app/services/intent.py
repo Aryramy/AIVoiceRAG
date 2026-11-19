@@ -86,3 +86,4 @@ _INTENT_CLASSIFIER = IntentClassifier()
 
 def get_intent_classifier() -> IntentClassifier:
     return _INTENT_CLASSIFIER
+

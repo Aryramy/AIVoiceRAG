@@ -42,3 +42,4 @@ Administrators configure runtime behavior under **Settings**:
 
 ### 9. System Health and Diagnostics
 - Live status indicators for Database, Qdrant Vector DB, Provider APIs, and Voice Worker.
+

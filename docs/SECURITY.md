@@ -35,3 +35,4 @@ VoiceRag is designed with a defense-in-depth security posture, addressing:
 ### 2.4 Data Privacy & Tenant Isolation
 - Knowledge bases and conversations are scoped with strict relational foreign keys.
 - Vector search queries in Qdrant enforce mandatory payload filtering on `knowledge_base_id` to guarantee zero cross-tenant passage leakage.
+

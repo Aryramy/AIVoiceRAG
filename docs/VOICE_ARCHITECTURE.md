@@ -37,3 +37,4 @@ VoiceRag provides a low-latency voice interaction pipeline combining **LiveKit W
    - Small utterances such as "Hello", "Thanks", "Great", or "Can you hear me?" bypass the RAG engine and are answered instantaneously with sub-300ms time-to-first-token.
 4. **Resilient Audio Fallback**:
    - When external provider TTS has high latency or rate limits, the built-in neural Edge-TTS synthesis acts as an immediate zero-cost fallback for Arabic and English.
+

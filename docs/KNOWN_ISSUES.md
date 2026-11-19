@@ -6,3 +6,4 @@
    - PDFs containing rasterized/scanned images of Arabic text require Tesseract OCR with `ara` training data for complete extraction. Text-based Arabic PDFs parse natively via `pypdf`.
 3. **Browser Audio Autoplay Policies**:
    - Modern browsers block programmatic audio playback without prior user interaction. Users must click the Microphone or Speaker icon at least once to authorize audio playback.
+

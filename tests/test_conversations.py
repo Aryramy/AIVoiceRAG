@@ -41,3 +41,4 @@ def test_conversation_lifecycle():
     # Verify deleted
     get_res = client.get(f"/api/v1/conversations/{conv_id}")
     assert get_res.status_code == 404
+

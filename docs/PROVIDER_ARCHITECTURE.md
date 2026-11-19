@@ -52,3 +52,4 @@ classDiagram
 2. **Independent Capability Selection**: A user can run OpenRouter for LLM, OpenAI for STT, and Gemini for TTS. Changing one capability never resets or interferes with another.
 3. **Secret Masking**: Stored keys are never reflected back in plaintext; masked representations (`sk-or-v1-****5a9b`) are transmitted to client settings.
 4. **Resilient In-Memory & DB Cache**: Discovered model catalogs are cached for 1 hour with a manual `Refresh Models` action to prevent unnecessary rate limiting.
+

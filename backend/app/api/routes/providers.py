@@ -132,3 +132,4 @@ async def test_provider_connection(data: ProviderTestRequest):
 
     result = await adapter.test_connection(api_key=data.api_key, base_url=data.base_url)
     return result
+

@@ -31,3 +31,4 @@
 ### 2.3 RAG Quality Evaluation
 - Representative evaluation dataset with 20+ English and Arabic questions.
 - Metrics: Retrieval Precision@K, Citation Correctness, Answer Groundedness, and Abstention Accuracy.
+

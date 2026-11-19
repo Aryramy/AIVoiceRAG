@@ -20,3 +20,4 @@ def get_provider_adapter(name: str) -> Optional[BaseProviderAdapter]:
 
 def get_edge_tts_adapter() -> EdgeTTSAdapter:
     return _TTS_ADAPTER
+

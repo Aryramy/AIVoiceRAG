@@ -7,7 +7,7 @@ import { MessageItem } from "@/components/chat/MessageItem";
 import { Composer } from "@/components/chat/Composer";
 import { ContextualPanel } from "@/components/contextual/ContextualPanel";
 import { VoiceWaveModal } from "@/components/voice/VoiceWaveModal";
-import { fetchConversationDetails, sendMessage } from "@/lib/api";
+import { fetchConversationDetails, sendMessage, createConversation } from "@/lib/api";
 import { Message } from "@/types";
 import {
   Radio,
@@ -26,6 +26,7 @@ import {
 export default function ChatPage() {
   const {
     activeConversationId,
+    setActiveConversationId,
     activeKbId,
     knowledgeBases,
     language,
@@ -71,12 +72,27 @@ export default function ChatPage() {
 
   // Send Message Handler
   const handleSendMessage = async (content: string) => {
-    if (!activeConversationId) return;
+    if (!content.trim()) return;
+
+    let targetConvId = activeConversationId;
+    if (!targetConvId) {
+      try {
+        const titleSnippet = content.trim().slice(0, 32);
+        const title = titleSnippet || (language === "ar" ? "محادثة جديدة" : "New Conversation");
+        const newConv = await createConversation(title, language);
+        targetConvId = newConv.id;
+        setActiveConversationId(newConv.id);
+        await refreshConversations();
+      } catch (err: any) {
+        console.error("Failed to auto-create conversation:", err);
+        return;
+      }
+    }
 
     // Optimistically append user message
     const tempUserMsg: Message = {
       id: `temp-${Date.now()}`,
-      conversation_id: activeConversationId,
+      conversation_id: targetConvId,
       role: "user",
       content,
       language: language === "ar" ? "ar" : "en",
@@ -87,7 +103,7 @@ export default function ChatPage() {
 
     try {
       const res = await sendMessage(
-        activeConversationId,
+        targetConvId,
         content,
         activeKbId || undefined,
         language
@@ -95,7 +111,7 @@ export default function ChatPage() {
 
       const assistantMsg: Message = {
         id: res.message_id || `asst-${Date.now()}`,
-        conversation_id: activeConversationId,
+        conversation_id: targetConvId,
         role: "assistant",
         content: res.content,
         citations: res.citations || [],
@@ -114,7 +130,7 @@ export default function ChatPage() {
     } catch (err: any) {
       const errorMsg: Message = {
         id: `err-${Date.now()}`,
-        conversation_id: activeConversationId,
+        conversation_id: targetConvId,
         role: "assistant",
         content: `Error: ${err.message || "Failed to generate response"}`,
         created_at: new Date().toISOString()
@@ -239,7 +255,6 @@ export default function ChatPage() {
         {/* Message Composer */}
         <Composer
           onSendMessage={handleSendMessage}
-          disabled={!activeConversationId}
           generating={generating}
         />
       </main>
@@ -252,3 +267,4 @@ export default function ChatPage() {
     </div>
   );
 }
+

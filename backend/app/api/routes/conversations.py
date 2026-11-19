@@ -160,3 +160,4 @@ async def send_message(
         db.commit()
 
     return result
+

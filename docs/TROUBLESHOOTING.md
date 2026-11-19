@@ -26,3 +26,4 @@
 - **Resolution**:
   - VoiceRag initializes SQLite with `PRAGMA journal_mode=WAL;` and `PRAGMA busy_timeout=5000;`.
   - Ensure no external process has opened the `.db` file in an exclusive lock mode.
+

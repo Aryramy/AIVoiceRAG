@@ -129,3 +129,4 @@ erDiagram
 - `estimated_cost` (FLOAT, NOT NULL)
 - `status_code` (INTEGER, DEFAULT 200)
 - `created_at` (DATETIME, UTC)
+

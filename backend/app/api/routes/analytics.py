@@ -94,3 +94,4 @@ def get_recent_logs(
 
     logs = query.order_by(desc(UsageLog.created_at)).offset(offset).limit(limit).all()
     return [UsageLogResponse.model_validate(l) for l in logs]
+

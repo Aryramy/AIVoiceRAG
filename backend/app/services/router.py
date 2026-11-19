@@ -85,3 +85,4 @@ _ROUTER = SmartAutoRouter()
 
 def get_router() -> SmartAutoRouter:
     return _ROUTER
+

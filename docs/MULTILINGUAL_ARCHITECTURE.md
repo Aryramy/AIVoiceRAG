@@ -14,3 +14,4 @@ Arabic and English are the two first-class mandatory languages in VoiceRag. The 
    - Arabic text normalization (alef normalization, teh marbuta handling, tashkeel stripping for sparse BM25 indexing).
 4. **Conversational Intent**:
    - Understands common Arabic greetings and acknowledgments (`مرحبا`, `أهلا`, `شكرا`, `يعطيك العافية`) as direct conversational intent without triggering RAG database abstention.
+

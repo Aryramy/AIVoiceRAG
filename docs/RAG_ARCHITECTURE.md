@@ -51,3 +51,4 @@ flowchart LR
 ## 4. Grounding & Abstention Policy
 - **Grounded Answer Contract**: The LLM system prompt strictly forbids speculation. Answers must cite specific document passages.
 - **Honest Abstention**: If the top fused relevance score falls below the configured threshold (default `0.35`), the assistant responds honestly with an abstention message rather than hallucinating.
+

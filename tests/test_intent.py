@@ -52,3 +52,4 @@ def test_noise_filtering(classifier):
     for n in noise_samples:
         intent, _ = classifier.classify(n)
         assert intent == UserIntent.NOISE
+

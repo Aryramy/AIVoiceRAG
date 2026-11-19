@@ -215,3 +215,4 @@ class OpenAIAdapter(BaseProviderAdapter):
             res = await client.post(url, headers=self._headers(), json=payload)
             res.raise_for_status()
             return res.content
+

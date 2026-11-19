@@ -54,3 +54,4 @@ Base URL: `/api/v1`
 - `GET /api/v1/analytics/summary`: Aggregate token usage, total estimated cost, average latency.
 - `GET /api/v1/analytics/usage`: Detailed request logs with date, provider, and model filtering.
 - `GET /api/v1/analytics/costs`: Cost breakdown by provider and capability.
+

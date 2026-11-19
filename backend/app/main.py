@@ -25,9 +25,21 @@ app = FastAPI(
 )
 
 # CORS Middleware for Next.js frontend
+cors_origins = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:8000",
+    "http://127.0.0.1:8000",
+]
+if hasattr(settings, "CORS_ORIGINS") and settings.CORS_ORIGINS:
+    for o in settings.CORS_ORIGINS:
+        if o not in cors_origins:
+            cors_origins.append(o)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=cors_origins,
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -49,3 +61,4 @@ def root():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("backend.app.main:app", host=settings.HOST, port=settings.PORT, reload=settings.DEBUG)
+

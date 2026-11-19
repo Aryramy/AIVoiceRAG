@@ -16,3 +16,4 @@ def test_health():
     data = response.json()
     assert data["status"] in ["healthy", "degraded"]
     assert "components" in data
+

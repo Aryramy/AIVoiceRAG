@@ -155,3 +155,4 @@ class OpenRouterAdapter(BaseProviderAdapter):
                                 except Exception:
                                     continue
                 return stream_generator()
+

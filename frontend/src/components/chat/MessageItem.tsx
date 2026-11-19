@@ -150,3 +150,4 @@ export function MessageItem({ message }: MessageItemProps) {
     </div>
   );
 }
+

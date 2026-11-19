@@ -81,3 +81,4 @@ _PRICING_CALCULATOR = PricingCalculator()
 
 def get_pricing_calculator() -> PricingCalculator:
     return _PRICING_CALCULATOR
+

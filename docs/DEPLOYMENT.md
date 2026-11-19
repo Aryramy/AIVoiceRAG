@@ -44,3 +44,4 @@
 - **Vector Database**: Standalone clustered Qdrant with persistent volume mounts.
 - **LiveKit Server**: Clustered LiveKit WebRTC SFU with Coturn STUN/TURN for NAT traversal.
 - **Database**: PostgreSQL with connection pooling (e.g. PgBouncer) for high scale.
+

@@ -21,3 +21,4 @@ VoiceRag provides a conversational workspace that allows you to interact via tex
 ## 3. Language Switching
 - Click the language toggle (`EN` / `AR`) in the top navigation or sidebar.
 - Switching to Arabic immediately mirrors the UI to Right-to-Left (RTL), sets Arabic typography, and configures the speech synthesis for natural Arabic dialogue.
+

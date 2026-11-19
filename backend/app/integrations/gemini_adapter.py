@@ -172,3 +172,4 @@ class GeminiAdapter(BaseProviderAdapter):
                                 except Exception:
                                     continue
                 return stream_generator()
+

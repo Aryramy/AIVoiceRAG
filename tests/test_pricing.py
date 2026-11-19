@@ -28,3 +28,4 @@ def test_tts_cost_calculation():
     # OpenAI TTS-1 ($0.015 per 1,000 chars)
     cost_openai = calc.calculate_tts_cost("openai", "tts-1", 1000)
     assert cost_openai == 0.015
+

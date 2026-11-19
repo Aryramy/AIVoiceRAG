@@ -28,9 +28,12 @@ export function Composer({ onSendMessage, disabled, generating, onStop }: Compos
 
   const handleSubmit = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!content.trim() || disabled || generating) return;
+    if (!content.trim() || generating) return;
     const textToSend = content.trim();
     setContent("");
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+    }
     onSendMessage(textToSend);
   };
 
@@ -66,14 +69,14 @@ export function Composer({ onSendMessage, disabled, generating, onStop }: Compos
           value={content}
           onChange={(e) => setContent(e.target.value)}
           onKeyDown={handleKeyDown}
-          disabled={disabled || generating}
+          disabled={generating}
           rows={1}
           placeholder={
             language === "ar"
               ? "اسأل أي سؤال حول مستنداتك، أو تحدث صوتياً، أو قل مرحباً..."
               : "Ask anything about your documents, talk via voice, or say hello..."
           }
-          className="w-full py-3.5 ps-4 pe-24 text-sm bg-transparent text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none resize-none leading-relaxed"
+          className="w-full py-3.5 ps-4 pe-24 text-sm bg-transparent text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none resize-none leading-relaxed cursor-text"
         />
 
         {/* Action Controls */}
@@ -82,7 +85,7 @@ export function Composer({ onSendMessage, disabled, generating, onStop }: Compos
           <button
             type="button"
             onClick={() => setVoiceModalOpen(true)}
-            className="p-2 text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition"
+            className="p-2 text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition cursor-pointer"
             title={language === "ar" ? "فتح المحادثة الصوتية الحية" : "Start Live Voice Chat"}
           >
             <Mic size={17} />
@@ -93,7 +96,7 @@ export function Composer({ onSendMessage, disabled, generating, onStop }: Compos
             <button
               type="button"
               onClick={onStop}
-              className="p-2 bg-red-600 hover:bg-red-500 text-white rounded-xl shadow-xs transition"
+              className="p-2 bg-red-600 hover:bg-red-500 text-white rounded-xl shadow-xs transition cursor-pointer"
               title={language === "ar" ? "إيقاف التوليد" : "Stop generation"}
             >
               <Square size={16} fill="currentColor" />
@@ -102,8 +105,8 @@ export function Composer({ onSendMessage, disabled, generating, onStop }: Compos
             <button
               type="button"
               onClick={() => handleSubmit()}
-              disabled={!content.trim() || disabled}
-              className="p-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-30 disabled:hover:bg-indigo-600 text-white rounded-xl shadow-xs transition active:scale-95"
+              disabled={!content.trim() || generating}
+              className="p-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-30 disabled:hover:bg-indigo-600 text-white rounded-xl shadow-xs transition active:scale-95 cursor-pointer disabled:cursor-not-allowed"
               title={language === "ar" ? "إرسال" : "Send message"}
             >
               <Send size={16} />
@@ -114,3 +117,4 @@ export function Composer({ onSendMessage, disabled, generating, onStop }: Compos
     </div>
   );
 }
+

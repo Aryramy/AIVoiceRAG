@@ -52,3 +52,4 @@ def test_analytics_summary():
     assert "total_requests" in summary
     assert "total_tokens" in summary
     assert "total_cost_usd" in summary
+

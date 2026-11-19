@@ -23,3 +23,4 @@
 | **COST-01** | Analytics & Cost | Telemetry (Tokens, Audio seconds, Latency, Cost) | PLANNED | Real calculation per request using pricing registry |
 | **ADMIN-01**| Administration | Comprehensive 9-domain Settings Dashboard | PLANNED | Real backend persistence and diagnostic health check |
 | **SEC-01** | Security | API Key masking, Input validation, Tenant safety | PLANNED | Zero credential leakage in client responses |
+

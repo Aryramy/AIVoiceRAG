@@ -171,3 +171,4 @@ _CHUNKER = DocumentParserAndChunker()
 
 def get_chunker() -> DocumentParserAndChunker:
     return _CHUNKER
+

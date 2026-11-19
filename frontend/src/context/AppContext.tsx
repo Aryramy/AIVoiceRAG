@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { Conversation, KnowledgeBase, Citation } from "@/types";
-import { fetchConversations, fetchKnowledgeBases } from "@/lib/api";
+import { fetchConversations, fetchKnowledgeBases, createConversation } from "@/lib/api";
 
 type Theme = "light" | "dark" | "system";
 type Language = "en" | "ar";
@@ -19,6 +19,7 @@ interface AppContextType {
   activeConversationId: string | null;
   setActiveConversationId: (id: string | null) => void;
   refreshConversations: () => Promise<void>;
+  createConversation: (title?: string, lang?: string) => Promise<Conversation>;
   
   // Knowledge Bases
   knowledgeBases: KnowledgeBase[];
@@ -77,11 +78,36 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     document.documentElement.lang = language;
   }, [direction, language]);
 
+  const handleCreateConversation = async (
+    title: string = language === "ar" ? "محادثة جديدة" : "New Conversation",
+    lang: string = language
+  ) => {
+    const newConv = await createConversation(title, lang);
+    setConversations((prev) => [newConv, ...prev.filter((c) => c.id !== newConv.id)]);
+    setActiveConversationId(newConv.id);
+    return newConv;
+  };
+
   const refreshConversations = async () => {
     try {
       const list = await fetchConversations();
+      if (list.length === 0) {
+        try {
+          const initial = await createConversation(
+            language === "ar" ? "محادثة جديدة" : "New Conversation",
+            language
+          );
+          setConversations([initial]);
+          setActiveConversationId(initial.id);
+          return;
+        } catch (createErr) {
+          console.error("Failed to auto-create initial conversation:", createErr);
+        }
+      }
       setConversations(list);
       if (!activeConversationId && list.length > 0) {
+        setActiveConversationId(list[0].id);
+      } else if (activeConversationId && !list.some((c) => c.id === activeConversationId) && list.length > 0) {
         setActiveConversationId(list[0].id);
       }
     } catch (e) {
@@ -115,6 +141,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         activeConversationId,
         setActiveConversationId,
         refreshConversations,
+        createConversation: handleCreateConversation,
         knowledgeBases,
         activeKbId,
         setActiveKbId,
@@ -139,3 +166,4 @@ export function useApp() {
   if (!context) throw new Error("useApp must be used within an AppProvider");
   return context;
 }
+

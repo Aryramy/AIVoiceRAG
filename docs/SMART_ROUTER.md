@@ -33,3 +33,4 @@ stateDiagram-v2
     FallbackTier2 --> BoundedFailure: All Eligible Providers Exhausted
 ```
 - **Idempotency & Cost Guard**: Non-idempotent operations are never blindly re-executed in parallel. Retries are strictly bounded to 2 attempts with exponential jitter.
+

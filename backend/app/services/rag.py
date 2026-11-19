@@ -349,3 +349,4 @@ _RAG_SERVICE = RAGService()
 
 def get_rag_service() -> RAGService:
     return _RAG_SERVICE
+
