@@ -6,7 +6,7 @@ class ModelInfo(BaseModel):
     name: str = Field(..., description="Display name for the model")
     provider: str = Field(..., description="Provider name: openai, gemini, openrouter, cheaper_inference")
     capabilities: List[str] = Field(default_factory=list, description="Supported capabilities: llm, stt, tts, voice")
-    context_window: int = Field(default=8192, description="Maximum token context window")
+    context_window: Optional[int] = Field(default=8192, description="Maximum token context window")
     input_cost_per_million: float = Field(default=0.0, description="Cost in USD per 1M input tokens")
     output_cost_per_million: float = Field(default=0.0, description="Cost in USD per 1M output tokens")
     supports_streaming: bool = Field(default=True)

@@ -14,6 +14,15 @@ async def lifespan(app: FastAPI):
     init_db()
     os.makedirs(os.path.join(settings.BASE_DIR, "data", "uploads"), exist_ok=True)
     os.makedirs(os.path.join(settings.BASE_DIR, "data", "qdrant"), exist_ok=True)
+    
+    # Pre-warm FastEmbed multilingual embedder and cross-encoder reranker
+    try:
+        from backend.app.services.retrieval import _EMBEDDING_SVC, _RERANKER_SVC
+        _EMBEDDING_SVC.warmup()
+        _RERANKER_SVC.warmup()
+    except Exception:
+        pass
+
     yield
     # Shutdown logic if needed
 

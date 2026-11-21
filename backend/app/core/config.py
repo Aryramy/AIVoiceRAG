@@ -63,7 +63,7 @@ class Settings(BaseSettings):
     DEFAULT_LANGUAGE: str = os.getenv("DEFAULT_LANGUAGE", "auto")
 
     # RAG Settings
-    EMBEDDING_MODEL: str = os.getenv("EMBEDDING_MODEL", "sentence-transformers/paraphrase-multilingual-mpnet-base-v2")
+    EMBEDDING_MODEL: str = os.getenv("EMBEDDING_MODEL", "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
     CHUNK_SIZE: int = int(os.getenv("CHUNK_SIZE", "500"))
     CHUNK_OVERLAP: int = int(os.getenv("CHUNK_OVERLAP", "100"))
     RETRIEVAL_TOP_K: int = int(os.getenv("RETRIEVAL_TOP_K", "5"))

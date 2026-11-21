@@ -23,6 +23,7 @@ export function ContextualPanel() {
     setContextualPanelOpen,
     activeKbId,
     setActiveKbId,
+    updateActiveConversationKb,
     knowledgeBases,
     refreshKnowledgeBases,
     selectedCitation,
@@ -31,6 +32,8 @@ export function ContextualPanel() {
   } = useApp();
 
   const [kbDetails, setKbDetails] = useState<any>(null);
+  const [inspectingKbId, setInspectingKbId] = useState<string | null>(null);
+  const [inspectingKbDetails, setInspectingKbDetails] = useState<any>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [showNewKbModal, setShowNewKbModal] = useState(false);
@@ -39,13 +42,13 @@ export function ContextualPanel() {
 
   const activeKb = knowledgeBases.find((k) => k.id === activeKbId);
 
-  const loadKbDetails = async () => {
-    if (!activeKbId) {
+  const loadKbDetails = async (kbId: string | null) => {
+    if (!kbId) {
       setKbDetails(null);
       return;
     }
     try {
-      const data = await fetchKnowledgeBaseDetails(activeKbId);
+      const data = await fetchKnowledgeBaseDetails(kbId);
       setKbDetails(data);
     } catch (err) {
       console.error(err);
@@ -53,18 +56,36 @@ export function ContextualPanel() {
   };
 
   useEffect(() => {
-    loadKbDetails();
+    loadKbDetails(activeKbId);
   }, [activeKbId]);
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const loadInspectingDetails = async (kbId: string | null) => {
+    if (!kbId) {
+      setInspectingKbDetails(null);
+      return;
+    }
+    try {
+      const data = await fetchKnowledgeBaseDetails(kbId);
+      setInspectingKbDetails(data);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  useEffect(() => {
+    loadInspectingDetails(inspectingKbId);
+  }, [inspectingKbId]);
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, targetKbId: string) => {
     const file = e.target.files?.[0];
-    if (!file || !activeKbId) return;
+    if (!file || !targetKbId) return;
 
     setUploading(true);
     setUploadError(null);
     try {
-      await uploadDocument(activeKbId, file);
-      await loadKbDetails();
+      await uploadDocument(targetKbId, file);
+      if (targetKbId === activeKbId) await loadKbDetails(activeKbId);
+      if (targetKbId === inspectingKbId) await loadInspectingDetails(inspectingKbId);
       await refreshKnowledgeBases();
     } catch (err: any) {
       setUploadError(err.message || "Failed to upload and index document");
@@ -74,11 +95,12 @@ export function ContextualPanel() {
     }
   };
 
-  const handleDeleteDoc = async (docId: string) => {
-    if (!activeKbId) return;
+  const handleDeleteDoc = async (docId: string, targetKbId: string) => {
+    if (!targetKbId) return;
     try {
-      await deleteDocument(activeKbId, docId);
-      await loadKbDetails();
+      await deleteDocument(targetKbId, docId);
+      if (targetKbId === activeKbId) await loadKbDetails(activeKbId);
+      if (targetKbId === inspectingKbId) await loadInspectingDetails(inspectingKbId);
       await refreshKnowledgeBases();
     } catch (err) {
       console.error(err);
@@ -91,7 +113,7 @@ export function ContextualPanel() {
     try {
       const newKb = await createKnowledgeBase(newKbName.trim(), newKbDesc.trim());
       await refreshKnowledgeBases();
-      setActiveKbId(newKb.id);
+      await updateActiveConversationKb(newKb.id);
       setShowNewKbModal(false);
       setNewKbName("");
       setNewKbDesc("");
@@ -112,7 +134,7 @@ export function ContextualPanel() {
         </div>
         <button
           onClick={() => setContextualPanelOpen(false)}
-          className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-800 transition"
+          className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-800 transition cursor-pointer"
         >
           <X size={16} />
         </button>
@@ -129,7 +151,7 @@ export function ContextualPanel() {
               </span>
               <button
                 onClick={() => setSelectedCitation(null)}
-                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
               >
                 <X size={13} />
               </button>
@@ -143,23 +165,32 @@ export function ContextualPanel() {
               )}
             </div>
             <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed italic bg-white dark:bg-slate-900 p-2.5 rounded-xl border border-indigo-100 dark:border-indigo-950">
-              "{selectedCitation.content_snippet}"
+              "{selectedCitation.content_snippet || selectedCitation.content || selectedCitation.snippet || ""}"
             </p>
           </div>
         )}
 
-        {/* Knowledge Base Info */}
+        {/* Active Knowledge Base Info (if one is attached to current chat) */}
         {activeKb ? (
           <div className="space-y-4">
             <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-2xs">
               <div className="flex items-start justify-between">
                 <div>
                   <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">{activeKb.name}</h3>
-                  <p className="text-xs text-slate-500 mt-0.5">{activeKb.description || "General Knowledge Base"}</p>
+                  <p className="text-xs text-slate-500 mt-0.5">{activeKb.description || "Active Knowledge Base"}</p>
                 </div>
-                <span className="px-2 py-0.5 text-[10px] bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 font-medium rounded-full">
-                  {language === "ar" ? "نشط" : "Active"}
-                </span>
+                <div className="flex items-center gap-1.5">
+                  <span className="px-2 py-0.5 text-[10px] bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 font-medium rounded-full">
+                    {language === "ar" ? "نشط" : "Active"}
+                  </span>
+                  <button
+                    onClick={() => updateActiveConversationKb(null)}
+                    className="text-[10px] px-2 py-0.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-full transition cursor-pointer"
+                    title={language === "ar" ? "التبديل إلى الوضع العام" : "Switch to General (No KB)"}
+                  >
+                    {language === "ar" ? "فصل" : "Detach"}
+                  </button>
+                </div>
               </div>
 
               {/* Upload Zone */}
@@ -174,7 +205,7 @@ export function ContextualPanel() {
                   <input
                     type="file"
                     accept=".pdf,.docx,.doc,.xlsx,.xls,.txt,.md"
-                    onChange={handleFileUpload}
+                    onChange={(e) => handleFileUpload(e, activeKb.id)}
                     disabled={uploading}
                     className="hidden"
                   />
@@ -218,8 +249,8 @@ export function ContextualPanel() {
                         </div>
                       </div>
                       <button
-                        onClick={() => handleDeleteDoc(doc.id)}
-                        className="p-1 text-slate-400 hover:text-red-500 rounded transition"
+                        onClick={() => handleDeleteDoc(doc.id, activeKb.id)}
+                        className="p-1 text-slate-400 hover:text-red-500 rounded transition cursor-pointer"
                         title={language === "ar" ? "حذف المستند" : "Delete Document"}
                       >
                         <Trash2 size={13} />
@@ -231,31 +262,175 @@ export function ContextualPanel() {
             </div>
           </div>
         ) : (
-          <div className="text-center py-10 space-y-3">
-            <Database size={32} className="mx-auto text-slate-400" />
-            <p className="text-xs text-slate-500 max-w-xs mx-auto">
+          /* General Mode Banner */
+          <div className="p-3.5 bg-slate-100/80 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                <Database size={13} className="text-slate-400" />
+                {language === "ar" ? "الوضع العام (بدون قاعدة معرفة)" : "General Mode (No KB)"}
+              </span>
+              <span className="text-[10px] px-1.5 py-0.5 bg-slate-200 dark:bg-slate-800 text-slate-500 rounded">
+                {language === "ar" ? "بدون استرجاع" : "RAG Off"}
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
               {language === "ar"
-                ? "حدد قاعدة معرفة من القائمة الجانبية أو قم بإنشاء قاعدة جديدة لرفع المستندات والبحث فيها"
-                : "Select a knowledge base or create a new one to upload documents and query them"}
+                ? "هذه المحادثة تجيب من المعرفة العامة للذكاء الاصطناعي. يمكنك ربط أي قاعدة معرفة أدناه لتفعيل الاسترجاع الدقيق."
+                : "This conversation answers using general AI knowledge. Attach any knowledge base below to enable grounded retrieval."}
             </p>
-            <button
-              onClick={() => setShowNewKbModal(true)}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-medium transition active:scale-95"
-            >
-              <Plus size={14} />
-              <span>{language === "ar" ? "إنشاء قاعدة معرفة" : "Create Knowledge Base"}</span>
-            </button>
           </div>
         )}
+
+        {/* All Knowledge Bases Section - Always Loaded & Visible */}
+        <div className="pt-2 border-t border-slate-200 dark:border-slate-800/80 space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+              <Database size={13} className="text-indigo-500" />
+              {language === "ar" ? "قواعد المعرفة المتاحة" : "Available Knowledge Bases"}
+              <span className="text-[10px] text-slate-400 font-mono">({knowledgeBases.length})</span>
+            </span>
+            <button
+              onClick={() => setShowNewKbModal(true)}
+              className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 rounded-lg transition cursor-pointer"
+            >
+              <Plus size={13} />
+              <span>{language === "ar" ? "قاعدة جديدة" : "New KB"}</span>
+            </button>
+          </div>
+
+          {knowledgeBases.length === 0 ? (
+            <div className="text-center py-6 px-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl space-y-2">
+              <Database size={24} className="mx-auto text-slate-400" />
+              <p className="text-xs text-slate-500">
+                {language === "ar" ? "لا توجد قواعد معرفة بعد" : "No knowledge bases created yet"}
+              </p>
+              <button
+                onClick={() => setShowNewKbModal(true)}
+                className="inline-flex items-center gap-1 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-medium cursor-pointer"
+              >
+                <Plus size={13} />
+                <span>{language === "ar" ? "إنشاء أول قاعدة" : "Create First KB"}</span>
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {knowledgeBases.map((kb) => {
+                const isCurrentActive = kb.id === activeKbId;
+                const isInspecting = inspectingKbId === kb.id;
+
+                return (
+                  <div
+                    key={kb.id}
+                    className={`p-3 rounded-xl border text-xs transition ${isCurrentActive
+                        ? "bg-indigo-50/50 dark:bg-indigo-950/20 border-indigo-200 dark:border-indigo-900/60"
+                        : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700"
+                      }`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="truncate flex-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-semibold text-slate-800 dark:text-slate-100 truncate">{kb.name}</span>
+                          {isCurrentActive && (
+                            <span className="px-1.5 py-0.2 bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 text-[9px] font-medium rounded">
+                              {language === "ar" ? "نشط" : "Active"}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                          {kb.description || (language === "ar" ? "بدون وصف" : "No description")}
+                        </p>
+                        <span className="inline-block text-[10px] text-slate-400 font-mono mt-1">
+                          {kb.document_count} {language === "ar" ? "مستندات" : "documents"}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-1 shrink-0">
+                        {isCurrentActive ? (
+                          <button
+                            onClick={() => updateActiveConversationKb(null)}
+                            className="px-2 py-1 text-[10px] bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-lg transition cursor-pointer"
+                          >
+                            {language === "ar" ? "فصل" : "Detach"}
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => updateActiveConversationKb(kb.id)}
+                            className="px-2.5 py-1 text-[10px] bg-indigo-600 hover:bg-indigo-500 text-white font-medium rounded-lg shadow-2xs transition cursor-pointer"
+                          >
+                            {language === "ar" ? "ربط بالدردشة" : "Attach"}
+                          </button>
+                        )}
+                        <button
+                          onClick={() => setInspectingKbId(isInspecting ? null : kb.id)}
+                          className={`p-1 rounded-lg transition cursor-pointer ${isInspecting
+                              ? "bg-slate-200 dark:bg-slate-800 text-indigo-600 dark:text-indigo-400"
+                              : "text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+                            }`}
+                          title={language === "ar" ? "عرض المستندات" : "Inspect documents"}
+                        >
+                          <FileText size={13} />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Quick Document Inspector for this KB */}
+                    {isInspecting && (
+                      <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800 space-y-2">
+                        <div className="flex items-center justify-between text-[11px] font-medium text-slate-500">
+                          <span>{language === "ar" ? "مستندات هذه القاعدة:" : "Documents in this KB:"}</span>
+                          <label className="text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer flex items-center gap-1">
+                            <Upload size={11} />
+                            <span>{language === "ar" ? "رفع" : "Upload"}</span>
+                            <input
+                              type="file"
+                              accept=".pdf,.docx,.doc,.xlsx,.xls,.txt,.md"
+                              onChange={(e) => handleFileUpload(e, kb.id)}
+                              disabled={uploading}
+                              className="hidden"
+                            />
+                          </label>
+                        </div>
+
+                        {!inspectingKbDetails?.documents || inspectingKbDetails.documents.length === 0 ? (
+                          <p className="text-[11px] text-slate-400 italic py-1">
+                            {language === "ar" ? "لا توجد مستندات بعد" : "No documents indexed yet"}
+                          </p>
+                        ) : (
+                          <div className="space-y-1 max-h-36 overflow-y-auto">
+                            {inspectingKbDetails.documents.map((d: any) => (
+                              <div
+                                key={d.id}
+                                className="flex items-center justify-between p-1.5 rounded bg-slate-50 dark:bg-slate-800/60 text-[11px]"
+                              >
+                                <span className="truncate pe-2 text-slate-700 dark:text-slate-300">{d.title}</span>
+                                <button
+                                  onClick={() => handleDeleteDoc(d.id, kb.id)}
+                                  className="text-slate-400 hover:text-red-500 p-0.5 cursor-pointer"
+                                  title="Delete"
+                                >
+                                  <Trash2 size={11} />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* New KB Modal */}
       {showNewKbModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 w-full max-w-sm space-y-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 w-full max-w-sm space-y-4 shadow-xl">
             <div className="flex items-center justify-between text-sm font-semibold text-slate-800 dark:text-slate-100">
               <span>{language === "ar" ? "قاعدة معرفة جديدة" : "New Knowledge Base"}</span>
-              <button onClick={() => setShowNewKbModal(false)} className="text-slate-400 hover:text-slate-600">
+              <button onClick={() => setShowNewKbModal(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
                 <X size={16} />
               </button>
             </div>
@@ -289,13 +464,13 @@ export function ContextualPanel() {
                 <button
                   type="button"
                   onClick={() => setShowNewKbModal(false)}
-                  className="px-3 py-1.5 text-xs text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg"
+                  className="px-3 py-1.5 text-xs text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg cursor-pointer"
                 >
                   {language === "ar" ? "إلغاء" : "Cancel"}
                 </button>
                 <button
                   type="submit"
-                  className="px-3.5 py-1.5 text-xs bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-medium"
+                  className="px-3.5 py-1.5 text-xs bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-medium cursor-pointer"
                 >
                   {language === "ar" ? "إنشاء" : "Create"}
                 </button>

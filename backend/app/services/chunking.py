@@ -4,6 +4,7 @@ from typing import List, Dict, Any, Optional
 import pypdf
 import docx
 import openpyxl
+from backend.app.core.config import settings
 
 class DocumentChunkDTO:
     def __init__(self, content: str, chunk_index: int, metadata: Dict[str, Any]):
@@ -12,9 +13,9 @@ class DocumentChunkDTO:
         self.metadata = metadata
 
 class DocumentParserAndChunker:
-    def __init__(self, chunk_size: int = 800, chunk_overlap: int = 150):
-        self.chunk_size = chunk_size
-        self.chunk_overlap = chunk_overlap
+    def __init__(self, chunk_size: Optional[int] = None, chunk_overlap: Optional[int] = None):
+        self.chunk_size = chunk_size if chunk_size is not None else settings.CHUNK_SIZE
+        self.chunk_overlap = chunk_overlap if chunk_overlap is not None else settings.CHUNK_OVERLAP
 
     def extract_text_from_file(self, file_path: str) -> List[Dict[str, Any]]:
         """

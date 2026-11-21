@@ -7,7 +7,10 @@ export interface Citation {
   document_title?: string;
   page_number?: number;
   content_snippet?: string;
+  content?: string;
+  snippet?: string;
   similarity_score?: number;
+  citation_index?: number;
 }
 
 export interface Message {
@@ -26,6 +29,8 @@ export interface Message {
   created_at?: string;
   citations?: Citation[];
   is_streaming?: boolean;
+  is_fallback?: boolean;
+  fallback_info?: string;
 }
 
 export interface Conversation {
@@ -33,6 +38,7 @@ export interface Conversation {
   user_id?: string;
   title: string;
   language: string;
+  knowledge_base_id?: string | null;
   created_at: string;
   updated_at: string;
   message_count: number;
@@ -116,6 +122,7 @@ export interface AISettings {
   stt_provider: string;
   stt_model: string;
   tts_provider: string;
+  tts_model?: string;
   tts_voice_en: string;
   tts_voice_ar: string;
   voice_provider: string;

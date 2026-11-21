@@ -36,6 +36,7 @@ export function Sidebar() {
     knowledgeBases,
     activeKbId,
     setActiveKbId,
+    updateActiveConversationKb,
     sidebarOpen,
     setSidebarOpen,
     setVoiceModalOpen
@@ -51,7 +52,8 @@ export function Sidebar() {
     try {
       const newConv = await createConversation(
         language === "ar" ? "محادثة جديدة" : "New Conversation",
-        language
+        language,
+        activeKbId || undefined
       );
       await refreshConversations();
       setActiveConversationId(newConv.id);
@@ -126,8 +128,8 @@ export function Sidebar() {
         </div>
         <select
           value={activeKbId || ""}
-          onChange={(e) => setActiveKbId(e.target.value || null)}
-          className="w-full text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-2.5 py-1.5 text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+          onChange={(e) => updateActiveConversationKb(e.target.value || null)}
+          className="w-full text-xs bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-2.5 py-1.5 text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
         >
           <option value="">{language === "ar" ? "عام (بدون قاعدة معرفة)" : "General (No Knowledge Base)"}</option>
           {knowledgeBases.map((kb) => (

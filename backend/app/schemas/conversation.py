@@ -11,6 +11,8 @@ class CitationResponse(BaseModel):
     document_title: Optional[str] = None
     page_number: Optional[int] = None
     content_snippet: Optional[str] = None
+    content: Optional[str] = None
+    citation_index: Optional[int] = None
     similarity_score: float = 0.0
 
 class MessageCreate(BaseModel):
@@ -18,6 +20,10 @@ class MessageCreate(BaseModel):
     language: Optional[str] = None
     audio_base64: Optional[str] = None
     stream: bool = False
+    use_rag: Optional[bool] = None
+    knowledge_base_id: Optional[str] = None
+    is_voice: Optional[bool] = False
+    is_voice: Optional[bool] = False
 
 class MessageResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -36,10 +42,18 @@ class MessageResponse(BaseModel):
     total_tokens: int = 0
     created_at: Any = None
     citations: List[CitationResponse] = []
+    is_fallback: bool = False
+    fallback_info: Optional[str] = None
 
 class ConversationCreate(BaseModel):
     title: Optional[str] = "New Conversation"
     language: Optional[str] = "en"
+    knowledge_base_id: Optional[str] = None
+
+class ConversationUpdate(BaseModel):
+    title: Optional[str] = None
+    language: Optional[str] = None
+    knowledge_base_id: Optional[str] = None
 
 class ConversationResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -48,6 +62,7 @@ class ConversationResponse(BaseModel):
     user_id: Optional[str] = None
     title: str
     language: str = "en"
+    knowledge_base_id: Optional[str] = None
     created_at: Any = None
     updated_at: Any = None
     message_count: int = 0

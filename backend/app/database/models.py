@@ -143,6 +143,7 @@ class MessageCitation(Base):
     content_snippet = Column(Text, nullable=True)
     page_number = Column(Integer, nullable=True)
     similarity_score = Column(Float, default=0.0)
+    citation_index = Column(Integer, nullable=True)
 
     message = relationship("Message", back_populates="citations")
 
@@ -165,6 +166,7 @@ class AISettings(Base):
     
     # TTS
     tts_provider = Column(String(50), default="edge_tts")
+    tts_model = Column(String(100), default="tts-1", nullable=True)
     tts_voice_en = Column(String(100), default="en-US-JennyNeural")
     tts_voice_ar = Column(String(100), default="ar-SA-HamedNeural")
     

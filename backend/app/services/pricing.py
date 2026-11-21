@@ -14,6 +14,9 @@ MODEL_PRICING: Dict[str, Dict[str, float]] = {
     "gpt-4o-realtime-preview": {"input": 5.00, "output": 20.00},
     
     # Gemini
+    "gemini-2.5-flash": {"input": 0.075, "output": 0.30},
+    "gemini-flash-latest": {"input": 0.075, "output": 0.30},
+    "gemini-3-flash-preview": {"input": 0.075, "output": 0.30},
     "gemini-2.0-flash": {"input": 0.075, "output": 0.30},
     "gemini-2.0-flash-exp": {"input": 0.00, "output": 0.00},
     "gemini-1.5-flash": {"input": 0.075, "output": 0.30},

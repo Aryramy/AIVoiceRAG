@@ -28,6 +28,17 @@ class BaseProviderAdapter(ABC):
         temperature: float = 0.7,
         max_tokens: int = 2048,
         stream: bool = False,
+        is_voice: bool = False,
+        **kwargs: Any
     ) -> Any:
         pass
+
+    async def transcribe_audio(self, audio_bytes: bytes, filename: str = "audio.wav", language: Optional[str] = None) -> str:
+        raise NotImplementedError(f"STT is not supported by {self.provider_name}")
+
+    async def synthesize_speech(self, text: str, voice: str = "alloy", model: Optional[str] = None) -> bytes:
+        raise NotImplementedError(f"TTS is not supported by {self.provider_name}")
+
+    async def stream_synthesize(self, text: str, voice: str = "alloy", model: Optional[str] = None) -> AsyncIterator[bytes]:
+        raise NotImplementedError(f"Streaming TTS is not supported by {self.provider_name}")
 

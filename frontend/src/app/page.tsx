@@ -7,7 +7,7 @@ import { MessageItem } from "@/components/chat/MessageItem";
 import { Composer } from "@/components/chat/Composer";
 import { ContextualPanel } from "@/components/contextual/ContextualPanel";
 import { VoiceWaveModal } from "@/components/voice/VoiceWaveModal";
-import { fetchConversationDetails, sendMessage, createConversation } from "@/lib/api";
+import { fetchConversationDetails, sendMessage, streamMessage, createConversation } from "@/lib/api";
 import { Message } from "@/types";
 import {
   Radio,
@@ -79,7 +79,7 @@ export default function ChatPage() {
       try {
         const titleSnippet = content.trim().slice(0, 32);
         const title = titleSnippet || (language === "ar" ? "محادثة جديدة" : "New Conversation");
-        const newConv = await createConversation(title, language);
+        const newConv = await createConversation(title, language, activeKbId || undefined);
         targetConvId = newConv.id;
         setActiveConversationId(newConv.id);
         await refreshConversations();
@@ -98,44 +98,86 @@ export default function ChatPage() {
       language: language === "ar" ? "ar" : "en",
       created_at: new Date().toISOString()
     };
-    setMessages((prev) => [...prev, tempUserMsg]);
+
+    const assistantTempId = `asst-${Date.now()}`;
+    const assistantPlaceholder: Message = {
+      id: assistantTempId,
+      conversation_id: targetConvId,
+      role: "assistant",
+      content: "",
+      language: language === "ar" ? "ar" : "en",
+      created_at: new Date().toISOString()
+    };
+
+    setMessages((prev) => [...prev, tempUserMsg, assistantPlaceholder]);
     setGenerating(true);
 
     try {
-      const res = await sendMessage(
+      await streamMessage(
         targetConvId,
         content,
-        activeKbId || undefined,
-        language
+        activeKbId,
+        language,
+        // onToken
+        (token: string) => {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistantTempId ? { ...m, content: m.content + token } : m
+            )
+          );
+        },
+        // onDone
+        (data: any) => {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistantTempId
+                ? {
+                  ...m,
+                  id: data.message_id || m.id,
+                  content: data.content !== undefined ? data.content : m.content,
+                  citations: data.citations || [],
+                  provider: data.provider,
+                  model: data.model,
+                  latency_ms: data.latency_ms,
+                  cost_usd: data.cost_usd,
+                  prompt_tokens: data.prompt_tokens,
+                  completion_tokens: data.completion_tokens,
+                  total_tokens: data.total_tokens,
+                  is_fallback: data.is_fallback,
+                  fallback_info: data.fallback_info,
+                }
+                : m
+            )
+          );
+          refreshConversations();
+        },
+        // onError
+        (err: any) => {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistantTempId
+                ? {
+                  ...m,
+                  content: m.content
+                    ? `${m.content}\n\n[Error: ${err.message}]`
+                    : `Error: ${err.message || "Failed to generate response"}`,
+                }
+                : m
+            )
+          );
+        }
       );
-
-      const assistantMsg: Message = {
-        id: res.message_id || `asst-${Date.now()}`,
-        conversation_id: targetConvId,
-        role: "assistant",
-        content: res.content,
-        citations: res.citations || [],
-        provider: res.provider,
-        model: res.model,
-        latency_ms: res.latency_ms,
-        cost_usd: res.cost_usd,
-        prompt_tokens: res.prompt_tokens,
-        completion_tokens: res.completion_tokens,
-        total_tokens: res.total_tokens,
-        created_at: new Date().toISOString()
-      };
-
-      setMessages((prev) => [...prev, assistantMsg]);
-      await refreshConversations();
     } catch (err: any) {
-      const errorMsg: Message = {
-        id: `err-${Date.now()}`,
-        conversation_id: targetConvId,
-        role: "assistant",
-        content: `Error: ${err.message || "Failed to generate response"}`,
-        created_at: new Date().toISOString()
-      };
-      setMessages((prev) => [...prev, errorMsg]);
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === assistantTempId
+            ? {
+              ...m,
+              content: `Error: ${err.message || "Failed to generate response"}`,
+            }
+            : m
+        )
+      );
     } finally {
       setGenerating(false);
     }
@@ -176,11 +218,10 @@ export default function ChatPage() {
             {/* Contextual Panel Toggle Button */}
             <button
               onClick={() => setContextualPanelOpen(!contextualPanelOpen)}
-              className={`p-2 rounded-xl transition ${
-                contextualPanelOpen
+              className={`p-2 rounded-xl transition ${contextualPanelOpen
                   ? "bg-slate-200 dark:bg-slate-800 text-indigo-600 dark:text-indigo-400"
                   : "text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-900"
-              }`}
+                }`}
               title={language === "ar" ? "تبديل لوحة المستندات" : "Toggle Knowledge Panel"}
             >
               <PanelRight size={17} />

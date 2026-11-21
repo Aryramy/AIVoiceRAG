@@ -14,6 +14,7 @@ class AISettingsBase(BaseModel):
     
     # TTS
     tts_provider: str = Field(default="edge_tts", description="Active TTS provider")
+    tts_model: Optional[str] = Field(default="tts-1", description="Active TTS model ID")
     tts_voice_en: str = Field(default="en-US-JennyNeural", description="English TTS voice")
     tts_voice_ar: str = Field(default="ar-SA-HamedNeural", description="Arabic TTS voice")
     
@@ -58,6 +59,7 @@ class AISettingsUpdate(BaseModel):
     stt_model: Optional[str] = None
     
     tts_provider: Optional[str] = None
+    tts_model: Optional[str] = None
     tts_voice_en: Optional[str] = None
     tts_voice_ar: Optional[str] = None
     

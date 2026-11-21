@@ -1,5 +1,8 @@
 from typing import List, Optional
+import json
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 
@@ -7,6 +10,7 @@ from backend.app.core.database import get_db
 from backend.app.database.models import Conversation, Message, MessageCitation
 from backend.app.schemas.conversation import (
     ConversationCreate,
+    ConversationUpdate,
     ConversationResponse,
     MessageCreate,
     MessageResponse,
@@ -37,6 +41,7 @@ def list_conversations(
             user_id=c.user_id,
             title=c.title,
             language=c.language,
+            knowledge_base_id=c.knowledge_base_id,
             created_at=c.created_at,
             updated_at=c.updated_at,
             message_count=count
@@ -47,7 +52,8 @@ def list_conversations(
 def create_conversation(data: ConversationCreate, db: Session = Depends(get_db)):
     conv = Conversation(
         title=data.title or "New Conversation",
-        language=data.language or "en"
+        language=data.language or "en",
+        knowledge_base_id=data.knowledge_base_id
     )
     db.add(conv)
     db.commit()
@@ -57,6 +63,7 @@ def create_conversation(data: ConversationCreate, db: Session = Depends(get_db))
         user_id=conv.user_id,
         title=conv.title,
         language=conv.language,
+        knowledge_base_id=conv.knowledge_base_id,
         created_at=conv.created_at,
         updated_at=conv.updated_at,
         message_count=0
@@ -86,6 +93,8 @@ def get_conversation_details(conversation_id: str, db: Session = Depends(get_db)
                 document_title=c.document_title,
                 page_number=c.page_number,
                 content_snippet=c.content_snippet,
+                content=c.content_snippet,
+                citation_index=c.citation_index,
                 similarity_score=c.similarity_score
             )
             for c in citations
@@ -111,6 +120,7 @@ def get_conversation_details(conversation_id: str, db: Session = Depends(get_db)
         "id": conv.id,
         "title": conv.title,
         "language": conv.language,
+        "knowledge_base_id": conv.knowledge_base_id,
         "created_at": conv.created_at,
         "updated_at": conv.updated_at,
         "messages": msg_responses
@@ -132,24 +142,88 @@ def delete_conversation(conversation_id: str, db: Session = Depends(get_db)):
     db.commit()
     return {"success": True, "message": "Conversation deleted"}
 
-@router.post("/{conversation_id}/messages")
-async def send_message(
+@router.patch("/{conversation_id}", response_model=ConversationResponse)
+def update_conversation(
     conversation_id: str,
-    data: MessageCreate,
-    knowledge_base_id: Optional[str] = Query(None),
+    data: ConversationUpdate,
     db: Session = Depends(get_db)
 ):
     conv = db.query(Conversation).filter(Conversation.id == conversation_id).first()
     if not conv:
         raise HTTPException(status_code=404, detail="Conversation not found")
 
+    dump = data.model_dump(exclude_unset=True)
+    if "title" in dump:
+        conv.title = dump["title"]
+    if "language" in dump:
+        conv.language = dump["language"]
+    if "knowledge_base_id" in dump:
+        val = dump["knowledge_base_id"]
+        if val in ("", "null", "none", None):
+            conv.knowledge_base_id = None
+        else:
+            conv.knowledge_base_id = str(val).strip()
+
+    conv.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(conv)
+
+    count = db.query(Message).filter(Message.conversation_id == conv.id).count()
+    return ConversationResponse(
+        id=conv.id,
+        user_id=conv.user_id,
+        title=conv.title,
+        language=conv.language,
+        knowledge_base_id=conv.knowledge_base_id,
+        created_at=conv.created_at,
+        updated_at=conv.updated_at,
+        message_count=count
+    )
+
+@router.post("/{conversation_id}/messages")
+async def send_message(
+    conversation_id: str,
+    data: MessageCreate,
+    knowledge_base_id: Optional[str] = Query(None),
+    use_rag: Optional[bool] = Query(None),
+    is_voice: Optional[bool] = Query(None),
+    db: Session = Depends(get_db)
+):
+    conv = db.query(Conversation).filter(Conversation.id == conversation_id).first()
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    # Determine use_rag
+    effective_use_rag = True
+    if use_rag is not None:
+        effective_use_rag = use_rag
+    elif data.use_rag is not None:
+        effective_use_rag = data.use_rag
+
+    effective_is_voice = is_voice if is_voice is not None else bool(data.is_voice)
+
+    # Determine target_kb
+    if not effective_use_rag:
+        target_kb = None
+    else:
+        req_kb = knowledge_base_id if knowledge_base_id is not None else data.knowledge_base_id
+        if req_kb is not None:
+            if str(req_kb).strip().lower() in ("", "null", "none"):
+                target_kb = None
+            else:
+                target_kb = str(req_kb).strip()
+        else:
+            target_kb = conv.knowledge_base_id
+
     rag = get_rag_service()
     result = await rag.answer_query(
         db=db,
         conversation_id=conversation_id,
         user_query=data.content,
-        kb_id=knowledge_base_id,
-        language=data.language or conv.language
+        kb_id=target_kb,
+        language=data.language or conv.language,
+        use_rag=bool(effective_use_rag and target_kb),
+        is_voice=effective_is_voice
     )
 
     # Auto-update conversation title if it's the first message
@@ -160,4 +234,69 @@ async def send_message(
         db.commit()
 
     return result
+
+@router.post("/{conversation_id}/messages/stream")
+async def send_message_stream(
+    conversation_id: str,
+    data: MessageCreate,
+    knowledge_base_id: Optional[str] = Query(None),
+    use_rag: Optional[bool] = Query(None),
+    is_voice: Optional[bool] = Query(None),
+    db: Session = Depends(get_db)
+):
+    conv = db.query(Conversation).filter(Conversation.id == conversation_id).first()
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    # Determine use_rag
+    effective_use_rag = True
+    if use_rag is not None:
+        effective_use_rag = use_rag
+    elif data.use_rag is not None:
+        effective_use_rag = data.use_rag
+
+    effective_is_voice = is_voice if is_voice is not None else bool(data.is_voice)
+
+    # Determine target_kb
+    if not effective_use_rag:
+        target_kb = None
+    else:
+        req_kb = knowledge_base_id if knowledge_base_id is not None else data.knowledge_base_id
+        if req_kb is not None:
+            if str(req_kb).strip().lower() in ("", "null", "none"):
+                target_kb = None
+            else:
+                target_kb = str(req_kb).strip()
+        else:
+            target_kb = conv.knowledge_base_id
+
+    rag = get_rag_service()
+
+    async def sse_event_generator():
+        async for event in rag.answer_query_stream(
+            db=db,
+            conversation_id=conversation_id,
+            user_query=data.content,
+            kb_id=target_kb,
+            language=data.language or conv.language,
+            use_rag=bool(effective_use_rag and target_kb),
+            is_voice=effective_is_voice
+        ):
+            yield f"event: {event['type']}\ndata: {json.dumps(event['data'])}\n\n"
+
+    # Auto-update conversation title if it's the first message
+    msg_count = db.query(Message).filter(Message.conversation_id == conversation_id).count()
+    if msg_count <= 2:
+        clean_snippet = data.content.strip().split("\n")[0][:40]
+        conv.title = clean_snippet if len(clean_snippet) > 3 else conv.title
+        db.commit()
+
+    headers = {
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive",
+        "X-Accel-Buffering": "no",
+        "Content-Type": "text/event-stream"
+    }
+    return StreamingResponse(sse_event_generator(), media_type="text/event-stream", headers=headers)
+
 

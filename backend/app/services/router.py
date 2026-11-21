@@ -32,11 +32,23 @@ class SmartAutoRouter:
         settings: AISettingsResponse,
         intent: UserIntent,
         query_token_estimate: int = 100,
-        has_docs: bool = False
+        has_docs: bool = False,
+        is_voice: bool = False
     ) -> Tuple[str, str]:
         """
-        Determines (provider, model) based on routing strategy and intent.
+        Determines (provider, model) based on routing strategy, intent, and voice low-latency tier.
         """
+        # If voice interaction is active, prioritize fast low-latency models for real-time responsiveness
+        if is_voice:
+            if settings.llm_provider == "openai" and self.is_provider_healthy("openai"):
+                return "openai", "gpt-4o-mini"
+            elif settings.llm_provider == "gemini" and self.is_provider_healthy("gemini"):
+                return "gemini", "gemini-flash-latest"
+            elif settings.llm_provider == "openrouter" and self.is_provider_healthy("openrouter"):
+                return "openrouter", "openai/gpt-4o-mini"
+            elif settings.llm_provider == "cheaper_inference" and self.is_provider_healthy("cheaper_inference"):
+                return "cheaper_inference", "gpt-4o-mini"
+
         strategy = settings.routing_strategy or "smart_auto"
 
         if strategy == "manual":
@@ -45,7 +57,7 @@ class SmartAutoRouter:
         if strategy == "low_cost":
             # Prefer cheapest configured provider
             if self.is_provider_healthy("gemini"):
-                return "gemini", "gemini-2.0-flash"
+                return "gemini", "gemini-flash-latest"
             if self.is_provider_healthy("openai"):
                 return "openai", "gpt-4o-mini"
             if self.is_provider_healthy("openrouter"):
@@ -57,7 +69,7 @@ class SmartAutoRouter:
             if self.is_provider_healthy("openai"):
                 return "openai", "gpt-4o"
             if self.is_provider_healthy("gemini"):
-                return "gemini", "gemini-1.5-pro"
+                return "gemini", "gemini-flash-latest"
             return settings.llm_provider, settings.llm_model
 
         # Default: smart_auto / balanced
@@ -67,7 +79,7 @@ class SmartAutoRouter:
                 if settings.llm_provider == "openai":
                     return "openai", "gpt-4o-mini"
                 elif settings.llm_provider == "gemini":
-                    return "gemini", "gemini-2.0-flash"
+                    return "gemini", "gemini-flash-latest"
                 return settings.llm_provider, settings.llm_model
 
         # For knowledge RAG queries with documents:

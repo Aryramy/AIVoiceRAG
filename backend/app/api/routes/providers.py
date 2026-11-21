@@ -15,22 +15,22 @@ router = APIRouter(prefix="/providers", tags=["Providers"])
 PROVIDERS_METADATA = {
     "openai": {
         "name": "OpenAI",
-        "capabilities": ["llm", "stt", "tts", "voice"],
+        "capabilities": ["llm", "stt", "tts"],
         "key_present": bool(settings.OPENAI_API_KEY)
     },
     "gemini": {
         "name": "Google Gemini",
-        "capabilities": ["llm", "voice"],
+        "capabilities": ["llm", "stt", "tts"],
         "key_present": bool(settings.GEMINI_API_KEY)
     },
     "openrouter": {
         "name": "OpenRouter",
-        "capabilities": ["llm"],
+        "capabilities": ["llm", "stt", "tts"],
         "key_present": bool(settings.OPENROUTER_API_KEY)
     },
     "cheaper_inference": {
         "name": "CheaperInference",
-        "capabilities": ["llm"],
+        "capabilities": ["llm", "stt", "tts"],
         "key_present": bool(settings.CHEAPER_INFERENCE_API_KEY)
     },
     "edge_tts": {
@@ -50,6 +50,7 @@ async def list_providers():
     for p_id, meta in PROVIDERS_METADATA.items():
         if p_id == "edge_tts":
             edge = get_edge_tts_adapter()
+            voices = await edge.list_voices()
             results.append(ProviderStatus(
                 provider=p_id,
                 name=meta["name"],
@@ -57,7 +58,7 @@ async def list_providers():
                 is_healthy=True,
                 supported_capabilities=meta["capabilities"],
                 models=[],
-                voices=edge.list_voices()
+                voices=voices
             ))
             continue
 
@@ -102,7 +103,7 @@ async def list_provider_voices(
     Lists available voices from the specified provider (e.g. edge_tts, openai, gemini).
     """
     if provider == "edge_tts":
-        voices = get_edge_tts_adapter().list_voices()
+        voices = await get_edge_tts_adapter().list_voices()
     else:
         adapter = get_provider_adapter(provider)
         if not adapter:

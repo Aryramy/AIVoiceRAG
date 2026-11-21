@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { Conversation, KnowledgeBase, Citation } from "@/types";
-import { fetchConversations, fetchKnowledgeBases, createConversation } from "@/lib/api";
+import { fetchConversations, fetchKnowledgeBases, createConversation, updateConversation } from "@/lib/api";
 
 type Theme = "light" | "dark" | "system";
 type Language = "en" | "ar";
@@ -19,12 +19,13 @@ interface AppContextType {
   activeConversationId: string | null;
   setActiveConversationId: (id: string | null) => void;
   refreshConversations: () => Promise<void>;
-  createConversation: (title?: string, lang?: string) => Promise<Conversation>;
+  createConversation: (title?: string, lang?: string, kbId?: string | null) => Promise<Conversation>;
   
   // Knowledge Bases
   knowledgeBases: KnowledgeBase[];
   activeKbId: string | null;
   setActiveKbId: (id: string | null) => void;
+  updateActiveConversationKb: (id: string | null) => Promise<void>;
   refreshKnowledgeBases: () => Promise<void>;
 
   // Panels
@@ -80,12 +81,50 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const handleCreateConversation = async (
     title: string = language === "ar" ? "محادثة جديدة" : "New Conversation",
-    lang: string = language
+    lang: string = language,
+    kbId?: string | null
   ) => {
-    const newConv = await createConversation(title, lang);
+    const targetKbId = kbId !== undefined ? kbId : activeKbId;
+    const newConv = await createConversation(title, lang, targetKbId);
     setConversations((prev) => [newConv, ...prev.filter((c) => c.id !== newConv.id)]);
     setActiveConversationId(newConv.id);
     return newConv;
+  };
+
+  // Sync activeKbId when activeConversationId changes
+  const handleSelectConversation = (id: string | null) => {
+    setActiveConversationId(id);
+    if (id) {
+      const conv = conversations.find((c) => c.id === id);
+      if (conv) {
+        setActiveKbId(conv.knowledge_base_id || null);
+      }
+    } else {
+      setActiveKbId(null);
+    }
+  };
+
+  const updateActiveConversationKb = async (kbId: string | null) => {
+    setActiveKbId(kbId);
+    if (activeConversationId) {
+      // Optimistically update conversation in local state
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.id === activeConversationId
+            ? { ...c, knowledge_base_id: kbId }
+            : c
+        )
+      );
+      try {
+        await updateConversation(activeConversationId, {
+          knowledge_base_id: kbId,
+        });
+        const list = await fetchConversations();
+        setConversations(list);
+      } catch (err) {
+        console.error("Failed to persist conversation knowledge base update:", err);
+      }
+    }
   };
 
   const refreshConversations = async () => {
@@ -99,6 +138,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           );
           setConversations([initial]);
           setActiveConversationId(initial.id);
+          setActiveKbId(initial.knowledge_base_id || null);
           return;
         } catch (createErr) {
           console.error("Failed to auto-create initial conversation:", createErr);
@@ -107,8 +147,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setConversations(list);
       if (!activeConversationId && list.length > 0) {
         setActiveConversationId(list[0].id);
+        setActiveKbId(list[0].knowledge_base_id || null);
       } else if (activeConversationId && !list.some((c) => c.id === activeConversationId) && list.length > 0) {
         setActiveConversationId(list[0].id);
+        setActiveKbId(list[0].knowledge_base_id || null);
       }
     } catch (e) {
       console.error(e);
@@ -139,12 +181,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         direction,
         conversations,
         activeConversationId,
-        setActiveConversationId,
+        setActiveConversationId: handleSelectConversation,
         refreshConversations,
         createConversation: handleCreateConversation,
         knowledgeBases,
         activeKbId,
         setActiveKbId,
+        updateActiveConversationKb,
         refreshKnowledgeBases,
         sidebarOpen,
         setSidebarOpen,
